@@ -58,7 +58,7 @@ function classifier = train(VOCopts,cls)
     %}
 
     % Load the name of the image for the selected set and the selected class
-    [ids,classifier.gt]=textread(sprintf(VOCopts.clsimgsetpath,cls,'train'),'%s %d');
+    [ids,classifier.gt]=textread(sprintf(VOCopts.clsimgsetpath,cls,'trainval'),'%s %d');
     hour = fix(clock);
     fprintf("%dH:%dM:%dS - VOC Buildings\n", hour(4),hour(5),hour(6))
     classifier.FD = VOCBuilding(VOCopts, cls, ids);
