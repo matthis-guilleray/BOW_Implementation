@@ -16,8 +16,8 @@ VOCopts.localdir=[cwd '/local/'];
 
 % initialize the test set
 
-VOCopts.testset='val'; % use validation data for development test set
-%VOCopts.testset='test'; % use test set for final challenge
+%VOCopts.testset='val'; % use validation data for development test set
+VOCopts.testset='test'; % use test set for final challenge
 
 % initialize paths
 
@@ -39,3 +39,4 @@ VOCopts.minoverlap=0.5;
 % initialize example options
 
 VOCopts.exfdpath=[VOCopts.localdir '%s_fd.mat'];
+VOCopts.exVOCpath=[VOCopts.localdir 'VOC_%s.mat'];

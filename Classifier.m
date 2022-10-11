@@ -13,14 +13,23 @@ function Classifier
     global maxIterationVOCBuilding
     global distanceAlgoVOCBuilding
     global nbImagesTesting
+    global nbFdImages
+    global fdAlgo
+    global trainingSet
     % Parameters : 
-    nbWordVOCBuilding = 1500; % Vocabulary : K parameter in Kmeans in VOCBuilding
+    nbWordVOCBuilding = 150; % Vocabulary : K parameter in Kmeans in VOCBuilding
     nbImagesVOCBuilding = -1; % Number of images processed in VOCBuilding, Max value at -1
     nbImagesClsTraining = -1; % Number of images used to train the classifier, Max value at -1
-    nbThresholdMatchFct = 5; % Percentage needed to match between to features
-    nbImagesTesting = -1; % Number of images used to test the classifier, Max value at -1
-    maxIterationVOCBuilding = 1000000;
-    distanceAlgoVOCBuilding = 'sqeuclidean';
+    nbThresholdMatchFct = 5; % Percentage needed to match between two features
+    nbImagesTesting = -1; % Number of images used to test the whole algo, Max value at -1
+    maxIterationVOCBuilding = 10000000; % Maximum iteration in the Kmean algorithm
+    distanceAlgoVOCBuilding = 'sqeuclidean'; % Distance method used in the Kmean algo
+    nbFdImages = 300; % Number of features descriptors per images
+    fdAlgo = "SIFT"; % Method used to find the features : "SIFT", "ORB"
+    trainingSet = "trainval"; % Which set is used
+
+    AllfdAlgo = ["SIFT", "ORB"]; % List of all the features descriptors implemented
+    
     % End of parameters
 
     % change this path if you install the VOC code elsewhere
@@ -29,22 +38,43 @@ function Classifier
     % initialize VOC options
     VOCinit;
 
+    % Building of the vocabulary
+    % getAllVOC(VOCopts, AllfdAlgo);
+    
+
+
     % train and test classifier for each class
     for i=1:VOCopts.nclasses
         cls=VOCopts.classes{i};
         classifier=train(VOCopts,cls);                  % train classifier
+
         hour = fix(clock);
         fprintf("%dH:%dM:%dS - Testings\n", hour(4),hour(5),hour(6))
         test(VOCopts,cls,classifier);                   % test classifier
         hour = fix(clock);
         fprintf("%dH:%dM:%dS - End of Testings\n", hour(4),hour(5),hour(6))
-        % [fp,tp,auc]=VOCroc(VOCopts,'comp1',cls,true);   % compute and display ROC
+        [fp,tp,auc]=VOCroc(VOCopts,'comp1',cls,true);   % compute and display ROC
         
         if i<VOCopts.nclasses
             fprintf('press any key to continue with next class...\n');
             pause;
         end
     end
+end
+function getAllVOC(VOCopts, fdAlgo)
+    global trainingSet
+    [ids,~]=textread(sprintf(VOCopts.clsimgsetpath,"bicycle",trainingSet),'%s %d');
+    hour = fix(clock);
+    fprintf("%dH:%dM:%dS - General Vocabulary building\n", hour(4),hour(5),hour(6))
+    for i=1:length(fdAlgo)
+        hour = fix(clock);
+        fprintf("%dH:%dM:%dS - %s\n", hour(4),hour(5),hour(6), fdAlgo(i))
+        VOCBuilding(VOCopts, ids, fdAlgo(i)); % get the VOC
+    end
+    hour = fix(clock);
+    fprintf("%dH:%dM:%dS - General Vocabulary building finished\n", hour(4),hour(5),hour(6))
+    error("The VOC have been successfully readed, sorted and stored")
+
 end
 
 function classifier = train(VOCopts,cls)
@@ -56,26 +86,25 @@ function classifier = train(VOCopts,cls)
     Return : 
         classifier : This classifier object will be used to make the classifier works
     %}
+    global fdAlgo
+    global trainingSet
 
     % Load the name of the image for the selected set and the selected class
-    [ids,classifier.gt]=textread(sprintf(VOCopts.clsimgsetpath,cls,'train'),'%s %d');
-    hour = fix(clock);
-    fprintf("%dH:%dM:%dS - VOC Buildings\n", hour(4),hour(5),hour(6))
-    classifier.FD = VOCBuilding(VOCopts, cls, ids);
+    [ids,classifier.gt]=textread(sprintf(VOCopts.clsimgsetpath,cls,"train"),'%s %d');
+    % We should read the Buck of word here
+    classifier.FD = VOCBuilding(VOCopts, ids, fdAlgo);
     hour = fix(clock);
     fprintf("%dH:%dM:%dS - Classifier training\n", hour(4),hour(5),hour(6))
+    [ids,classifier.gt]=textread(sprintf(VOCopts.clsimgsetpath,cls,"val"),'%s %d');
     classifier.model = ClassifierTraining(VOCopts, classifier, ids);
 end
 
-function c = VOCBuilding(VOCopts, cls, ids)
+function c = VOCBuilding(VOCopts, ids, fdAlgo)
     %{
     Goal : Implementation the Building of the vocabulary for buck of word
     Parameters : 
         VOCopts : The object from the VOC dev kit
-        cls : String which contain the type of object we want to test
-        nbWord : The number which will be used to set the number of words in the bucket of words
         ids : The list of images used
-        nbImages : Number of images used in the Buck of words
     Return : 
         f : a nbWord of features (for Sift : nbWord by 128)
     %}
@@ -87,56 +116,58 @@ function c = VOCBuilding(VOCopts, cls, ids)
     if nbImagesVOCBuilding == -1
         nbImagesVOCBuilding = length(ids);
     end
-
-    hour = fix(clock);
-    fprintf('%s : total of images : %d Images used : %d\n', cls, length(ids), nbImagesVOCBuilding);
-    fprintf("%dH:%dM:%dS - Reading of the images\n", hour(4),hour(5),hour(6))
     drawnow;
-    
-    for i=1:nbImagesVOCBuilding % For each name of image in the dataset
-        % display progress
-        if toc>1
-            fprintf('%s: train: %d/%d\n',cls,i,nbImagesVOCBuilding);
-            drawnow;
-            tic;
-        end
-        try
-            % Read the previous features
-            load(sprintf(VOCopts.exfdpath,ids{i}),'fd');
-        catch
-            % Read the image, extract the features, and stores the features
-            I=imread(sprintf(VOCopts.imgpath,ids{i})); % Lecture de l'image
-            fd = extractfd(I); % Extraction of features, return a tab of nbFeat * LenghtPerFeature (ex SIFT lenngth = 128)
-            % fd = gpuArray(fd); % Using GPU | comment to use the CPU
-            save(sprintf(VOCopts.exfdpath,ids{i}),'fd'); % Save of the features in a file
-        end
-        if i == 1 % In the case of the first iteration, where fd is undefined
-            AllFeatures = fd; % Normal way
-            % AllFeatures = gpuArray(fd); % Using GPU | comment to use the
-            % CPU
-        else
-            AllFeatures = [AllFeatures; fd]; 
+
+    try 
+        % load(sprintf(VOCopts.exVOCpath,fdAlgo),'c');
+        error("Normal")
+        fprintf("Skipping the reading of the images \n")
+
+    catch  
+        hour = fix(clock);
+        fprintf('total of images : %d Images used : %d\n', length(ids), nbImagesVOCBuilding);
+        fprintf("%dH:%dM:%dS - Reading of the images\n", hour(4),hour(5),hour(6))
+        for i=1:nbImagesVOCBuilding % For each name of image in the dataset
+            % display progress
+            if toc>1
+                fprintf('train: %d/%d\n',i,nbImagesVOCBuilding);
+                drawnow;
+                tic;
+            end
+                % Read the image, extract the features, and stores the features
+                I=imread(sprintf(VOCopts.imgpath,ids{i})); % Lecture de l'image
+                fd = extractfd(I, fdAlgo); % Extraction of features, return a tab of nbFeat * LenghtPerFeature (ex SIFT lenngth = 128)
+                % fd = gpuArray(fd); % Using GPU | comment to use the CPU
+                % features in a file previous line commented bc I try to save
+                % the whole model in different states
+            if i == 1 % In the case of the first iteration, where fd is undefined
+                AllFeatures = fd; % Normal way
+                % AllFeatures = gpuArray(fd); % Using GPU | comment to use the
+                % CPU
+            else
+                AllFeatures = [AllFeatures; fd]; 
+            end
+            
         end
         
+        % Problem too much time, consider lowering the values
+        % Maybe just ignore the warning, or sort the fd directly in extractfeature but can cause some problem
+        % Maybe just too much value
+        hour = fix(clock);
+        fprintf("%dH:%dM:%dS - ", hour(4),hour(5),hour(6))
+        fprintf("Clustering algo\n")
+        % Hierarchical clustering
+        % eucD = pdist(AllFeatures,'euclidean');
+        % c = linkage(eucD,'average');
+        % kmean clustering
+        [~, c] = kmeans(AllFeatures, nbWordVOCBuilding, 'MaxIter', maxIterationVOCBuilding, distance=distanceAlgoVOCBuilding, start='Cluster');
+        hour = fix(clock);
+        fprintf("%dH:%dM:%dS - ", hour(4),hour(5),hour(6))
+        fprintf("Algo finished\n")
+        % We are only interested in C, which is a vector of K by 128
+        % save(sprintf(VOCopts.exVOCpath,num2str(fdAlgo)),'c'); % Save of the voc
     end
     
-    % Problem too much time, consider lowering the values
-    % Maybe just ignore the warning, or sort the fd directly in extractfeature but can cause some problem
-    % Maybe just too much value
-    hour = fix(clock);
-    fprintf("%dH:%dM:%dS - ", hour(4),hour(5),hour(6))
-    fprintf("Clustering algo\n")
-    % Hierarchical clustering
-    % eucD = pdist(AllFeatures,'euclidean');
-    % c = linkage(eucD,'average');
-    % kmean clustering
-    [~, c] = kmeans(AllFeatures, nbWordVOCBuilding, 'MaxIter', maxIterationVOCBuilding, distance=distanceAlgoVOCBuilding, start='Cluster');
-    hour = fix(clock);
-    fprintf("%dH:%dM:%dS - ", hour(4),hour(5),hour(6))
-    fprintf("Algo finished\n")
-    % We are only interested in C, which is a vector of K by 128
-
-    % Normally, with Sift, c contains a vector of nbWord * nbVectorSwift which is (K * 128)
 
 end
 
@@ -170,10 +201,10 @@ function model = ClassifierTraining(VOCopts, classifier, ids)
     hour = fix(clock);
     fprintf("%dH:%dM:%dS - Training of the model\n", hour(4),hour(5),hour(6))
 
-    model = fitcsvm(X,y); % Training of the SVM model
-    % model =fitcsvm(X,y,'OptimizeHyperparameters','auto', ...
-    % 'HyperparameterOptimizationOptions',struct('AcquisitionFunctionName', ...
-    % 'expected-improvement-plus'))
+    % model = fitcsvm(X,y); % Training of the SVM model
+    model =fitcsvm(X,y,'OptimizeHyperparameters','auto', ...
+    'HyperparameterOptimizationOptions',struct('AcquisitionFunctionName', ...
+    'expected-improvement-plus'))
 
     hour = fix(clock);
     fprintf("%dH:%dM:%dS - End of training of the model\n", hour(4),hour(5),hour(6))
@@ -229,7 +260,6 @@ function test(VOCopts,cls,classifier)
 
 end
 
-
 function histogram = SearchWord(I, Bow)
     %{
     Goal : for a given image, and a given buck of word, this function will search those words in the image and return a histogram
@@ -245,7 +275,7 @@ function histogram = SearchWord(I, Bow)
     treshold = nbThresholdMatchFct; % Threshold for the matching
 
 
-    fd=extractfd(I);
+    fd=extractfd(I, -1);
     sz = size(Bow);
     indexPairs = matchFeatures(Bow, fd, MatchThreshold=treshold);
     % Pair of 2 column to match between features
@@ -272,10 +302,11 @@ function I = preProcessingImages(I)
     %}
 
     I = rgb2gray(I);
+    I = edge(I,"log", [], 0.2);
 
 end
 
-function fd = extractfd(I)
+function fd = extractfd(I, fdAlgolc)
     %{
     Goal : Extract all the features descriptors of the Image I
     Parameters : 
@@ -283,17 +314,27 @@ function fd = extractfd(I)
     Return : 
         fd : The features descriptors of the image I
     %}
+    global nbFdImages;
+    global fdAlgo
+    if isnumeric(fdAlgolc)
+        fdAlgolc = fdAlgo;
+
+    end
 
     fd = [];
     I = preProcessingImages(I);
-    points = detectSIFTFeatures(I);
-    points = points.selectStrongest(200);
-    if length(points)>300
-        length(points)
+    if fdAlgolc == "SIFT"
+        points = detectSIFTFeatures(I);
+        points = points.selectStrongest(nbFdImages);
+        fd = extractFeatures(I,points);
+    elseif fdAlgolc == "ORB"
+        points = detectORBFeatures(I);
+        fd = points.selectStrongest(nbFdImages);
+        fd = extractFeatures(I,fd).Features;
+        fd = double(fd);
+    else 
+        error("Algo not implemented : "+fdAlgolc)
     end
-    fd = extractFeatures(I,points);
-
-
 end    
 
 function c = classify(VOCopts,classifier,histogram)
