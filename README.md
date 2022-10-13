@@ -1,4 +1,17 @@
 # Classification of Object :
+## How to install : 
+- Clone the Repo
+- Download the VOC2006 folder (which contains all the images)
+- Put the folder VOC2006 into the / of the repo
+- Download the library VOCcode and put the folder into the / of the repo
+- Download the library vlfeat (ideally rename it "vlfeat") and put it in the / of the repo
+- Open the folder in Matlab and then run the following command : run <VLFEATROOT>/toolbox/vl_setup
+    In our case we have to replace VLFEATROOT by vlfeat
+
+### Error possible : 
+    - Error with a folder named "local" : Create a folder called "local" in the root of the project
+
+
 
 ## How to use it : 
 Matlab is needed, to execute all the files
