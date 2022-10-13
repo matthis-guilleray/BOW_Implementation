@@ -17,7 +17,7 @@ function Classifier
     global fdAlgo
     global trainingSet
     % Parameters : 
-    nbWordVOCBuilding = 150; % Vocabulary : K parameter in Kmeans in VOCBuilding
+    nbWordVOCBuilding = 200; % Vocabulary : K parameter in Kmeans in VOCBuilding
     nbImagesVOCBuilding = -1; % Number of images processed in VOCBuilding, Max value at -1
     nbImagesClsTraining = -1; % Number of images used to train the classifier, Max value at -1
     nbThresholdMatchFct = 5; % Percentage needed to match between two features
@@ -26,7 +26,7 @@ function Classifier
     distanceAlgoVOCBuilding = 'sqeuclidean'; % Distance method used in the Kmean algo
     nbFdImages = 300; % Number of features descriptors per images
     fdAlgo = "SIFT"; % Method used to find the features : "SIFT", "ORB"
-    trainingSet = "trainval"; % Which set is used
+    trainingSet = "train"; % Which set is used
 
     AllfdAlgo = ["SIFT", "ORB"]; % List of all the features descriptors implemented
     
@@ -119,8 +119,7 @@ function c = VOCBuilding(VOCopts, ids, fdAlgo)
     drawnow;
 
     try 
-        % load(sprintf(VOCopts.exVOCpath,fdAlgo),'c');
-        error("Normal")
+        load(sprintf(VOCopts.exVOCpath,fdAlgo),'c');
         fprintf("Skipping the reading of the images \n")
 
     catch  
@@ -160,12 +159,14 @@ function c = VOCBuilding(VOCopts, ids, fdAlgo)
         % eucD = pdist(AllFeatures,'euclidean');
         % c = linkage(eucD,'average');
         % kmean clustering
-        [~, c] = kmeans(AllFeatures, nbWordVOCBuilding, 'MaxIter', maxIterationVOCBuilding, distance=distanceAlgoVOCBuilding, start='Cluster');
+        AllFeatures = transpose(AllFeatures);
+        [c, ~] = vl_kmeans(AllFeatures, nbWordVOCBuilding, 'Initialization', 'plusplus', 'Algorithm', 'Lloyd');
         hour = fix(clock);
         fprintf("%dH:%dM:%dS - ", hour(4),hour(5),hour(6))
         fprintf("Algo finished\n")
+        c = transpose(c)
         % We are only interested in C, which is a vector of K by 128
-        % save(sprintf(VOCopts.exVOCpath,num2str(fdAlgo)),'c'); % Save of the voc
+        save(sprintf(VOCopts.exVOCpath,num2str(fdAlgo)),'c'); % Save of the voc
     end
     
 
@@ -274,9 +275,9 @@ function histogram = SearchWord(I, Bow)
     % Parameters : 
     treshold = nbThresholdMatchFct; % Threshold for the matching
 
-
     fd=extractfd(I, -1);
     sz = size(Bow);
+    
     indexPairs = matchFeatures(Bow, fd, MatchThreshold=treshold);
     % Pair of 2 column to match between features
     histogram = zeros(1,sz(1));
@@ -302,7 +303,7 @@ function I = preProcessingImages(I)
     %}
 
     I = rgb2gray(I);
-    I = edge(I,"log", [], 0.2);
+    % I = edge(I,"log", [], 0.2);
 
 end
 
@@ -324,9 +325,10 @@ function fd = extractfd(I, fdAlgolc)
     fd = [];
     I = preProcessingImages(I);
     if fdAlgolc == "SIFT"
-        points = detectSIFTFeatures(I);
-        points = points.selectStrongest(nbFdImages);
-        fd = extractFeatures(I,points);
+        I = single(I);
+        [f,fd] = vl_sift(I);
+        fd = transpose(fd);
+        fd = double(fd);
     elseif fdAlgolc == "ORB"
         points = detectORBFeatures(I);
         fd = points.selectStrongest(nbFdImages);

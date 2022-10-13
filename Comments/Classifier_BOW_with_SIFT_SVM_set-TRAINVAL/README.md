@@ -26,6 +26,7 @@ Or the result file is the following one : result_file_comp1_bicycle.txt
 Using the result file you can recompute the figure
 
 But the Area under the curve it at 0.9
+This result is not good bc the train set used included a part from the validation set
 
 # Time and computational power
 The computer used is an I7 8565u with an NVME ssd, and 16go of ram
