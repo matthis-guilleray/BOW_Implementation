@@ -23,14 +23,12 @@ function main()
 
 
     % Parameters : 
-    nbWordVOCBuilding = 50; % Vocabulary : K parameter in Kmeans in VOCBuilding
-    nbImagesVOCBuilding = 50; % Number of images processed in VOCBuilding, Max value at -1
-    nbImagesClsTraining = 50; % Number of images used to train the classifier, Max value at -1
+    nbWordVOCBuilding = 200; % Vocabulary : K parèameter in Kmeans in VOCBuilding
+    nbImagesVOCBuilding = -1; % Number of images processed in VOCBuilding, Max value at -1
+    nbImagesClsTraining = -1; % Number of images used to train the classifier, Max value at -1
     nbImagesTesting = -1; % Number of images used to test the whole algo, Max value at -1
-    nbFdImages = 300; % Number of features descriptors per images
     fdAlgo = "SIFT"; % Method used to find the features : "SIFT", "ORB"
     trainingSet = "train"; % Which set is used
-    treshold = 150000;
     
     % End of parameters
 
@@ -72,14 +70,14 @@ function classifier = train(VOCopts,cls)
     % Load the name of the image for the selected set and the selected class
     [ids,classifier.gt]=textread(sprintf(VOCopts.clsimgsetpath,cls,"train"),'%s %d');
     % VOCabulary Building
-    classifier.FD = VOCBuilding(VOCopts, ids, fdAlgo);
+    [ classifier.m, classifier.cov, classifier.p] = VOCBuilding(VOCopts, ids, fdAlgo);
     hour = fix(clock);
     fprintf("%dH:%dM:%dS - Classifier training\n", hour(4),hour(5),hour(6))
     % Training of the model
     classifier.model = ClassifierTraining(VOCopts, classifier, ids);
 end
 
-function c = VOCBuilding(VOCopts, ids, fdAlgo)
+function [means, covariances, priors] = VOCBuilding(VOCopts, ids, fdAlgo)
     %{
     Goal : Implementation the Building of the vocabulary for buck of word
     Parameters : 
@@ -97,6 +95,7 @@ function c = VOCBuilding(VOCopts, ids, fdAlgo)
     drawnow;
 
     try 
+        error("Defaulting to creation of voc")
         load(sprintf(VOCopts.exVOCpath,fdAlgo),'c');
         fprintf("Skipping the reading of the images \n")
 
@@ -141,12 +140,13 @@ function c = VOCBuilding(VOCopts, ids, fdAlgo)
         % c = linkage(eucD,'average');
         % kmean clustering
         size(AllFeatures)
-        [c, ~] = vl_ikmeans(AllFeatures, nbWordVOCBuilding, 'Verbose');
+        % [c, ~] = vl_ikmeans(AllFeatures, nbWordVOCBuilding, 'Verbose');
+        [means, covariances, priors] = vl_gmm(single(AllFeatures), nbWordVOCBuilding);
         hour = fix(clock);
         fprintf("%dH:%dM:%dS - ", hour(4),hour(5),hour(6))
         fprintf("Algo finished\n")
         % We are only interested in C, which is a vector of K by 128
-        save(sprintf(VOCopts.exVOCpath,num2str(fdAlgo)),'c'); % Save of the voc
+        % save(sprintf(VOCopts.exVOCpath,num2str(fdAlgo)),'c'); % Save of the voc
         
     end
     
@@ -164,19 +164,21 @@ function model = ClassifierTraining(VOCopts, classifier, ids)
         model : return the trained classifier
     %}
     global nbImagesClsTraining
+    global nbWordVOCBuilding
 
     if nbImagesClsTraining == -1  
         nbImagesClsTraining = length(ids); % Number of image in the classifier training
     end
-    nbWord = size(classifier.FD);
-    nbWord = nbWord(2);
-    X = zeros(nbImagesClsTraining, nbWord); % The histogram of all the trainning images
+    nbWord = nbWordVOCBuilding;
+
+
+
+    X = zeros(nbImagesClsTraining, 2*size(classifier.m, 2)*128);
     y = zeros(nbImagesClsTraining, 1); % The Binary value of the image wether is from the class or not
     hour = fix(clock);
     fprintf("%dH:%dM:%dS - Reading of the images\n", hour(4),hour(5),hour(6))
     for i=1:nbImagesClsTraining
-        histogram = SearchWord(VOCopts, ids{i},classifier.FD);
-        X(i, 1:nbWord) = transpose(histogram);
+        X(i,:) = SearchWord(VOCopts, ids{i},classifier.m,classifier.cov,classifier.p);
         y(i,1) = classifier.gt(i); % Wether it is or not from the searched class
     end
     hour = fix(clock);
@@ -226,10 +228,10 @@ function test(VOCopts,cls,classifier)
         end
         
         % Read the image and compute the histogram
-        histogram = SearchWord(VOCopts, ids{i}, classifier.FD);
+        histogram = SearchWord(VOCopts, ids{i},classifier.m,classifier.cov,classifier.p); 
 
         % compute confidence of positive classification
-        c=classify(VOCopts,classifier,histogram);
+        c=classify(VOCopts,classifier,transpose(histogram));
         
         % write to results file
         fprintf(fid,'%s %f\n',ids{i},c);
@@ -240,84 +242,10 @@ function test(VOCopts,cls,classifier)
 
 end
 
-function total = matchFeaturesLocal(ft1, ft2, fdAlgolc)
-%     ft2 tab de features
-    global fdAlgo
-    if isnumeric(fdAlgolc)
-        fdAlgolc = fdAlgo;
-    end
-    global treshold
-    total = 0;
-    sz = size(ft2);
-    for i=1:sz(2)
-        % ip = matchFeatures(transpose(ft1), transpose(ft2(i,:))); %
-        % Error it will furnish a 0 by 2 matrix even if the result is
-        % the same
-        [dist,sc]= vl_ubcmatch(uint8(ft1),ft2(:,i)); % sc is the euclidian distance btw points
-        if sc < treshold
-            total = total + 1;
-        end
-    end
-end
-
-function histogram = SearchWord_old(VOCopts, ids, Bow)
-    %{
-    Goal : for a given image, and a given buck of word, this function will search those words in the image and return a histogram
-    Should work, tested on basic situation
-    Parameters : 
-        ids : Name of theimage
-        Bow : Buck of word an array of k by 128 for SIFT
-    Return : 
-        histogram : The histogram of the BOW (normalized)
-    %}
-    % Parameters : 
-    try
-        load(sprintf(VOCopts.exfdpath,ids),'fd');
-    catch
-        I=imread(sprintf(VOCopts.imgpath,ids));
-        fd = extractfd(I, -1);
-        save(sprintf(VOCopts.exfdpath,ids),'fd');
-    end
-    szBw = size(Bow);
-    histogram = zeros(szBw(2),1);
-    cum = 0;
-    
-    for i=1:szBw(2)
-        histogram(i) = matchFeaturesLocal(Bow(:,i), fd, -1);
-        cum = cum + histogram(i);
-    end
-
-
-    
-    % Pair of 2 column to match between features
-    
-    % Adding 1 for each occurence in the indexPairs variable
-
-    % Normalization
-    tmp = zeros(szBw(2),1);
-    for i=1:length(histogram)
-        if histogram(i)~= 0
-            tmp(i) = histogram(i)/cum;
-        else
-            tmp(i) = 0;
-        end
-
-    end
-    histogram = tmp;
-    
-
-end
-
-function histogram = SearchWord(VOCopts, ids, Bow)
+function histogram = SearchWord(VOCopts, ids, mean, cov, prior)
     I=imread(sprintf(VOCopts.imgpath,ids));
     features = extractfd(I,-1);
-    global nbWordVOCBuilding
-    D = vl_alldist2(single(features), single(Bow));
-    % Create normalized histogram over minimum distance cluster centers
-    
-    [~, inds] = min(D, [], 2);
-    [histogram, ~] = histcounts(inds, 1:nbWordVOCBuilding+1, 'Normalization', 'probability');
-
+    histogram = vl_fisher(single(features), mean, cov, prior);
 end
 
 
