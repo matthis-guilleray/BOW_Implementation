@@ -20,6 +20,7 @@ function main()
     global fdAlgo
     global trainingSet
     global treshold
+    global svmLambda
 
 
     % Parameters : 
@@ -29,7 +30,8 @@ function main()
     nbImagesTesting = -1; % Number of images used to test the whole algo, Max value at -1
     fdAlgo = "SIFT"; % Method used to find the features : "SIFT", "ORB"
     trainingSet = "train"; % Which set is used
-    
+    svmLambda = 0.00001;
+
     % End of parameters
 
     % change this path if you install the VOC code elsewhere
@@ -74,7 +76,7 @@ function classifier = train(VOCopts,cls)
     hour = fix(clock);
     fprintf("%dH:%dM:%dS - Classifier training\n", hour(4),hour(5),hour(6))
     % Training of the model
-    classifier.model = ClassifierTraining(VOCopts, classifier, ids);
+    [classifier.w,classifier.b] = ClassifierTraining(VOCopts, classifier, ids);
 end
 
 function [means, covariances, priors] = VOCBuilding(VOCopts, ids, fdAlgo)
@@ -153,7 +155,7 @@ function [means, covariances, priors] = VOCBuilding(VOCopts, ids, fdAlgo)
 
 end
 
-function model = ClassifierTraining(VOCopts, classifier, ids)
+function [w,b] = ClassifierTraining(VOCopts, classifier, ids)
     %{
     Goal : Train the classifier
     Parameters : 
@@ -165,6 +167,7 @@ function model = ClassifierTraining(VOCopts, classifier, ids)
     %}
     global nbImagesClsTraining
     global nbWordVOCBuilding
+    global svmLambda
 
     if nbImagesClsTraining == -1  
         nbImagesClsTraining = length(ids); % Number of image in the classifier training
@@ -183,8 +186,8 @@ function model = ClassifierTraining(VOCopts, classifier, ids)
     end
     hour = fix(clock);
     fprintf("%dH:%dM:%dS - Training of the model\n", hour(4),hour(5),hour(6))
-
-    model = fitcsvm(X,y); % Training of the SVM model
+    [w,b] = vl_svmtrain(transpose(X),y,svmLambda);
+    % model = fitcsvm(X,y); % Training of the SVM model
 %     model =fitcsvm(X,y,'OptimizeHyperparameters','auto', ...
 %     'HyperparameterOptimizationOptions',struct('AcquisitionFunctionName', ...
 %     'expected-improvement-plus'))
@@ -312,7 +315,6 @@ function c = classify(VOCopts,classifier,histogram)
     % Here implement the classifier (SVM, Adaboost, etc...)
 
     % [label,score] = predict(classifier.model, transpose(histogram));
-    [label,score] = predict(classifier.model, histogram);
-    c = score(2);
+    c = classifier.w' * histogram' + classifier.b;
 
 end
