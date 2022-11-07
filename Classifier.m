@@ -23,14 +23,14 @@ function main()
 
 
     % Parameters : 
-    nbWordVOCBuilding = 200; % Vocabulary : K parameter in Kmeans in VOCBuilding
-    nbImagesVOCBuilding = -1; % Number of images processed in VOCBuilding, Max value at -1
-    nbImagesClsTraining = -1; % Number of images used to train the classifier, Max value at -1
+    nbWordVOCBuilding = 50; % Vocabulary : K parameter in Kmeans in VOCBuilding
+    nbImagesVOCBuilding = 50; % Number of images processed in VOCBuilding, Max value at -1
+    nbImagesClsTraining = 50; % Number of images used to train the classifier, Max value at -1
     nbImagesTesting = -1; % Number of images used to test the whole algo, Max value at -1
     nbFdImages = 300; % Number of features descriptors per images
     fdAlgo = "SIFT"; % Method used to find the features : "SIFT", "ORB"
     trainingSet = "train"; % Which set is used
-    treshold = 120000;
+    treshold = 150000;
     
     % End of parameters
 
@@ -97,7 +97,6 @@ function c = VOCBuilding(VOCopts, ids, fdAlgo)
     drawnow;
 
     try 
-        error("defecting to reading images")
         load(sprintf(VOCopts.exVOCpath,fdAlgo),'c');
         fprintf("Skipping the reading of the images \n")
 
@@ -141,12 +140,14 @@ function c = VOCBuilding(VOCopts, ids, fdAlgo)
         % eucD = pdist(AllFeatures,'euclidean');
         % c = linkage(eucD,'average');
         % kmean clustering
+        size(AllFeatures)
         [c, ~] = vl_ikmeans(AllFeatures, nbWordVOCBuilding, 'Verbose');
         hour = fix(clock);
         fprintf("%dH:%dM:%dS - ", hour(4),hour(5),hour(6))
         fprintf("Algo finished\n")
         % We are only interested in C, which is a vector of K by 128
         save(sprintf(VOCopts.exVOCpath,num2str(fdAlgo)),'c'); % Save of the voc
+        
     end
     
 
@@ -246,30 +247,20 @@ function total = matchFeaturesLocal(ft1, ft2, fdAlgolc)
         fdAlgolc = fdAlgo;
     end
     global treshold
-    min=9999999;
     total = 0;
     sz = size(ft2);
     for i=1:sz(2)
-        if fdAlgolc == "RGB" 
-            if ft1 == ft2(i)
-                total = total + 1;
-            end
-        else
-            % ip = matchFeatures(transpose(ft1), transpose(ft2(i,:))); %
-            % Error it will furnish a 0 by 2 matrix even if the result is
-            % the same
-            [dist,sc]= vl_ubcmatch(uint8(ft1),ft2(:,i)); % sc is theeuclidiandistancebtwpoints
-            if sc < treshold
-                total = total + 1;
-            end
-            if  min>sc
-                min=sc;
-            end
+        % ip = matchFeatures(transpose(ft1), transpose(ft2(i,:))); %
+        % Error it will furnish a 0 by 2 matrix even if the result is
+        % the same
+        [dist,sc]= vl_ubcmatch(uint8(ft1),ft2(:,i)); % sc is the euclidian distance btw points
+        if sc < treshold
+            total = total + 1;
         end
     end
 end
 
-function histogram = SearchWord(VOCopts, ids, Bow)
+function histogram = SearchWord_old(VOCopts, ids, Bow)
     %{
     Goal : for a given image, and a given buck of word, this function will search those words in the image and return a histogram
     Should work, tested on basic situation
@@ -317,6 +308,20 @@ function histogram = SearchWord(VOCopts, ids, Bow)
 
 end
 
+function histogram = SearchWord(VOCopts, ids, Bow)
+    I=imread(sprintf(VOCopts.imgpath,ids));
+    features = extractfd(I,-1);
+    global nbWordVOCBuilding
+    D = vl_alldist2(single(features), single(Bow));
+    % Create normalized histogram over minimum distance cluster centers
+    
+    [~, inds] = min(D, [], 2);
+    [histogram, ~] = histcounts(inds, 1:nbWordVOCBuilding+1, 'Normalization', 'probability');
+
+end
+
+
+
 function I = preProcessingImages(I)
     %{
     Goal : Preprocessing of the image, to add different filter to the image before being processed
@@ -327,7 +332,8 @@ function I = preProcessingImages(I)
     %}
     
     I = rgb2gray(I);
-    % I = edge(I,"log", [], 0.2);
+    % I = im2single(I);
+    I = edge(I,"log", [], 0.5);
 
 end
 
@@ -357,8 +363,8 @@ function fd = extractfd(I, fdAlgolc)
         fd = points.selectStrongest(nbFdImages);
         fd = extractFeatures(I,fd).Features;
         fd = double(fd);
-    elseif fdAlgolc == "RGB"
-        fd = [[mean(I, "all")]];
+    elseif fdAlgolc == "PHOW"
+        [~,fd] = vl_phow(I, struct('color','opponent'));
     else 
         error("Algo not implemented : "+fdAlgolc)
     end
@@ -377,7 +383,8 @@ function c = classify(VOCopts,classifier,histogram)
     %}
     % Here implement the classifier (SVM, Adaboost, etc...)
 
-    [label,score] = predict(classifier.model, transpose(histogram));
+    % [label,score] = predict(classifier.model, transpose(histogram));
+    [label,score] = predict(classifier.model, histogram);
     c = score(2);
 
 end
